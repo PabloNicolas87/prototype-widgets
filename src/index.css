@@ -15,6 +15,137 @@
   }
 }
 
+@keyframes tilt-animation {
+  0%, 100% {
+    transform: rotateX(0deg) rotateY(0deg) scale(1);
+  }
+  25% {
+    transform: rotateX(5deg) rotateY(5deg) scale(1.02);
+  }
+  50% {
+    transform: rotateX(0deg) rotateY(0deg) scale(1);
+  }
+  75% {
+    transform: rotateX(-5deg) rotateY(-5deg) scale(1.02);
+  }
+}
+
 .widget-edit-mode {
-  animation: subtle-vibration 2s ease-in-out infinite;
+  animation: tilt-animation 2s ease-in-out infinite !important;
+  transform-style: preserve-3d !important;
+  will-change: transform !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+  border: 2px solid rgba(59, 130, 246, 0.3) !important;
+}
+
+.dashboard-tilt {
+  /* Ya no se usa, la animación está en widget-edit-mode */
+}
+
+/* Contenedor con perspectiva para el efecto 3D */
+.dashboard-with-perspective {
+  perspective: 1000px;
+}
+
+/* Estilos para botones flotantes */
+.floating-button {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.floating-button:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+}
+
+/* Estilos para la lista flotante de widgets */
+.floating-widget-list {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  position: fixed;
+  top: 100px;
+  right: 20px;
+  z-index: 50;
+}
+
+/* Animación de entrada para la lista flotante */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.floating-widget-list-enter {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Lista oculta */
+.floating-widget-list-hidden {
+  opacity: 0;
+  transform: translateX(320px);
+  pointer-events: none !important;
+  visibility: hidden;
+}
+
+/* Lista visible */
+.floating-widget-list-visible {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto !important;
+  visibility: visible;
+}
+
+/* Área de detección del mouse para mostrar la lista */
+.mouse-detection-area {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100px;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.mouse-detection-area.active {
+  pointer-events: auto;
+}
+
+/* Indicador visual de lista oculta */
+.widget-list-indicator {
+  position: fixed;
+  top: 160px;
+  right: 0;
+  background: rgba(59, 130, 246, 0.9);
+  color: white;
+  padding: 12px 8px;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  z-index: 45;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.widget-list-indicator:hover {
+  background: rgba(59, 130, 246, 1);
+  padding-right: 12px;
+}
+
+.widget-list-indicator svg {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }

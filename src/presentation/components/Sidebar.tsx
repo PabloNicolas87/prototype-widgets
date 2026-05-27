@@ -56,7 +56,7 @@ export function Sidebar() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {dashboardConfigs.map((dashboard) => {
             const isActive = layoutState.currentDashboardId === dashboard.id;
-            
+             
             return (
               <button
                 key={dashboard.id}

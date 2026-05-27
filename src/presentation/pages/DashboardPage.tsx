@@ -8,17 +8,14 @@ import { useLayout, useAuth } from '../../application/store/index';
 import { getWidgetData } from '../../application/useCases/getWidgetData';
 import { getDashboardConfig } from '../../infrastructure/config/dashboardConfigs';
 import { WidgetRegistry } from '../components/WidgetRegistry';
-import { WidgetPicker } from '../components/WidgetPicker';
-import type { LayoutItem, WidgetCatalogItem } from '../../domain/entities';
+import type { LayoutItem } from '../../domain/entities';
 
 // Componente wrapper para WidthProvider + Responsive
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
-type ButtonState = 'customize' | 'cancel' | 'save';
-
 export function DashboardPage() {
   const { state: layoutState, dispatch: layoutDispatch } = useLayout();
-  const { state: authState, dispatch: authDispatch } = useAuth();
+  const { dispatch: authDispatch } = useAuth();
   
   // Obtener el dashboard actual
   const currentDashboard = layoutState.dashboards[layoutState.currentDashboardId] || {
@@ -29,15 +26,26 @@ export function DashboardPage() {
   const dashboardConfig = getDashboardConfig(layoutState.currentDashboardId);
   
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isDraggingOrResizing, setIsDraggingOrResizing] = useState(false);
   const [currentBreakpoint, setCurrentBreakpoint] = useState<string>('lg');
+  const [isWidgetListVisible, setIsWidgetListVisible] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   
   // Guardar el estado original al entrar en modo edición
   const [originalLayouts, setOriginalLayouts] = useState<Record<string, LayoutItem[]>>({});
   const [originalActiveWidgets, setOriginalActiveWidgets] = useState<string[]>([]);
+
+  // Detectar si es dispositivo táctil
+  useEffect(() => {
+    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  }, []);
+
+  // Filtrar widgets por dashboard actual
+  const dashboardWidgets = useMemo(() => {
+    return widgetCatalog.filter(w => w.dashboardId === layoutState.currentDashboardId);
+  }, [layoutState.currentDashboardId]);
 
   // Detectar cambios de resolución y mostrar toast cuando no es desktop
   useEffect(() => {
@@ -55,7 +63,11 @@ export function DashboardPage() {
         setCurrentBreakpoint(newBreakpoint);
         
         // Mostrar toast cuando cambiamos a una resolución que no es desktop
-        if (newBreakpoint !== 'lg') {
+        // Usar localStorage para evitar mostrar el mismo toast repetidamente
+        const toastKey = `breakpoint-toast-${newBreakpoint}`;
+        const hasShownToast = localStorage.getItem(toastKey);
+        
+        if (newBreakpoint !== 'lg' && !hasShownToast) {
           const breakpointNames: Record<string, string> = {
             md: 'Tablet',
             sm: 'Mobile Grande',
@@ -70,6 +82,8 @@ export function DashboardPage() {
               icon: 'ℹ️',
             }
           );
+          
+          localStorage.setItem(toastKey, 'true');
         }
       }
     };
@@ -126,19 +140,30 @@ export function DashboardPage() {
       setOriginalActiveWidgets([...currentDashboard.activeWidgets]);
       setHasChanges(false);
       setIsEditMode(true);
+      // En dispositivos táctiles, mostrar la lista automáticamente
+      if (isTouchDevice) {
+        setIsWidgetListVisible(true);
+      }
     } else if (hasChanges) {
       // Hay cambios, mostrar modal de confirmación
       setIsSaveModalOpen(true);
     } else {
       // No hay cambios, simplemente cancelar
       setIsEditMode(false);
+      setIsWidgetListVisible(false);
     }
-  }, [isEditMode, hasChanges, currentDashboard.layouts, currentDashboard.activeWidgets]);
+  }, [isEditMode, hasChanges, currentDashboard.layouts, currentDashboard.activeWidgets, isTouchDevice]);
 
   const handleConfirmSave = useCallback(() => {
     // Confirmar guardar cambios
     setIsEditMode(false);
+    setIsWidgetListVisible(false);
     setIsSaveModalOpen(false);
+    
+    // Mostrar toast de confirmación
+    toast.success('Alterações salvas com sucesso!', {
+      duration: 3000,
+    });
   }, []);
 
   const handleCancelSave = useCallback(() => {
@@ -164,7 +189,14 @@ export function DashboardPage() {
     });
     
     setIsEditMode(false);
+    setIsWidgetListVisible(false);
     setIsSaveModalOpen(false);
+    
+    // Mostrar toast de cancelación
+    toast('Alterações descartadas', {
+      duration: 3000,
+      icon: '🗑️',
+    });
   }, [originalActiveWidgets, originalLayouts, currentDashboard.activeWidgets, layoutDispatch]);
 
   const handleRemoveWidget = useCallback((widgetId: string) => {
@@ -175,55 +207,146 @@ export function DashboardPage() {
   const handleAddWidget = useCallback((widgetId: string) => {
     layoutDispatch({ type: 'ADD_WIDGET', payload: widgetId });
     setHasChanges(true);
-    setIsPickerOpen(false);
+    
+    // Mostrar toast de widget agregado
+    toast.success('Widget adicionado com sucesso!', {
+      duration: 2000,
+    });
   }, [layoutDispatch]);
 
   // Filtrar widgets disponibles para el dashboard actual
-  const activeCatalog = widgetCatalog.filter(w => currentDashboard.activeWidgets.includes(w.id));
-  const availableWidgets = widgetCatalog.filter(w => !currentDashboard.activeWidgets.includes(w.id));
+  const activeCatalog = dashboardWidgets.filter(w => currentDashboard.activeWidgets.includes(w.id));
+  const availableWidgets = dashboardWidgets.filter(w => !currentDashboard.activeWidgets.includes(w.id));
 
   // Memoizar layouts para evitar ciclos infinitos de renderizado
   const memoizedLayouts = useMemo(() => currentDashboard.layouts, [currentDashboard.layouts]);
 
-  // Determinar el estado del botón
-  const buttonState: ButtonState = isEditMode 
-    ? (hasChanges ? 'save' : 'cancel')
-    : 'customize';
-
   return (
     <div className={`min-h-screen bg-gray-50 transition-all duration-300 ${isEditMode ? 'bg-gray-100' : ''}`}>
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      {/* Header con título y botón de logout */}
+      <header className="bg-white shadow-sm border-b border-gray-200 relative z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{dashboardConfig?.name || 'Dashboard'}</h1>
             <p className="text-sm text-gray-500">{dashboardConfig?.description || 'Bem-vindo'}</p>
           </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleToggleEditMode}
-              className={`px-4 py-2 rounded-lg transition-all duration-300 ${
-                buttonState === 'customize'
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                  : buttonState === 'cancel'
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
-            >
-              {buttonState === 'customize' && 'Personalizar'}
-              {buttonState === 'cancel' && 'Cancelar Edição'}
-              {buttonState === 'save' && 'Salvar Edição'}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
-            >
-              Sair
-            </button>
-          </div>
+          <button
+            onClick={handleLogout}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
+          >
+            Sair
+          </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Indicador visual cuando la lista está oculta (solo en desktop) */}
+      {!isTouchDevice && isEditMode && !isWidgetListVisible && (
+        <div
+          className="widget-list-indicator"
+          onMouseEnter={() => setIsWidgetListVisible(true)}
+          title="Mostrar lista de widgets"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+        </div>
+      )}
+
+      {/* Botón flotante de edición */}
+      <div className="fixed top-24 right-4 z-50 flex flex-col items-end gap-3">
+        {/* Botón flotante principal (editar/salir) */}
+        <button
+          onClick={handleToggleEditMode}
+          className={`floating-button w-14 h-14 rounded-full flex items-center justify-center transition-colors ${
+            isEditMode
+              ? 'bg-gray-700 hover:bg-gray-800 text-white'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
+          title={isEditMode ? 'Sair do modo de edição' : 'Personalizar dashboard'}
+        >
+          {isEditMode ? (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          )}
+        </button>
+
+        {/* Lista flotante de widgets (solo visible en modo edición) */}
+        {isEditMode && (
+          <div
+            className={`floating-widget-list rounded-xl border border-gray-200 p-4 w-80 max-h-[70vh] overflow-y-auto ${
+              isWidgetListVisible ? 'floating-widget-list-visible' : 'floating-widget-list-hidden'
+            }`}
+            onMouseEnter={() => !isTouchDevice && setIsWidgetListVisible(true)}
+            onMouseLeave={() => !isTouchDevice && setIsWidgetListVisible(false)}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-700">Adicionar Widgets</h3>
+              {/* Botón de guardar solo cuando hay cambios */}
+              {hasChanges && (
+                <button
+                  onClick={handleToggleEditMode}
+                  className="w-8 h-8 rounded-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center transition-colors"
+                  title="Salvar alterações"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {availableWidgets.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">Todos os widgets já estão no dashboard</p>
+            ) : (
+              <div className="space-y-2">
+                {availableWidgets.map((widget) => (
+                  <div
+                    key={widget.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <span className="text-blue-600 text-xs font-medium">
+                          {widget.type === 'kpi' ? 'KPI' : 
+                           widget.type === 'bar-chart' ? '📊' :
+                           widget.type === 'line-chart' ? '📈' :
+                           widget.type === 'pie-chart' ? '🥧' : '📋'}
+                        </span>
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">{widget.name}</span>
+                    </div>
+                    <button
+                      onClick={() => handleAddWidget(widget.id)}
+                      className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-colors"
+                      title="Adicionar widget"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Botón de toggle para dispositivos táctiles */}
+            {isTouchDevice && (
+              <button
+                onClick={() => setIsWidgetListVisible(!isWidgetListVisible)}
+                className="w-full mt-3 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm"
+              >
+                {isWidgetListVisible ? 'Ocultar lista' : 'Mostrar lista'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Main content con animación tilt cuando está en modo edición */}
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 ${isEditMode ? 'dashboard-with-perspective' : ''}`}>
         <ResponsiveGridLayout
           className="layout"
           layouts={memoizedLayouts}
@@ -250,55 +373,23 @@ export function DashboardPage() {
             const size = layoutItem ? { w: layoutItem.w, h: layoutItem.h } : { w: 3, h: 2 };
 
             return (
-              <div 
-                key={widget.id} 
-                className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-300 ${
+              <div
+                key={widget.id}
+                className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-300 p-4 ${
                   isEditMode ? 'widget-edit-mode' : ''
                 }`}
               >
-                {isEditMode && (
-                  <button
-                    onClick={() => handleRemoveWidget(widget.id)}
-                    className="absolute top-2 right-2 z-10 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
-                    title="Remover widget"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
                 <WidgetComponent
                   data={data}
                   title={widget.name}
                   size={size}
+                  onDelete={isEditMode ? () => handleRemoveWidget(widget.id) : undefined}
                 />
               </div>
             );
           })}
-          
-          {isEditMode && (
-            <div 
-              key="add-widget"
-              className="border-2 border-dashed border-blue-300 bg-blue-50 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-blue-100 hover:border-blue-400 transition-all duration-300 min-h-[120px]"
-              onClick={() => setIsPickerOpen(true)}
-            >
-              <div className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center mb-2">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </div>
-              <p className="text-blue-600 font-medium text-sm">Adicionar Widget</p>
-            </div>
-          )}
         </ResponsiveGridLayout>
       </main>
-
-      <WidgetPicker
-        isOpen={isPickerOpen}
-        onClose={() => setIsPickerOpen(false)}
-        availableWidgets={availableWidgets as WidgetCatalogItem[]}
-        onAddWidget={handleAddWidget}
-      />
 
       {/* Modal de confirmación para guardar cambios */}
       {isSaveModalOpen && (

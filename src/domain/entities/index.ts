@@ -12,6 +12,7 @@ export interface WidgetCatalogItem {
   id: string;
   name: string;
   type: WidgetType;
+  dashboardId: string;
 }
 
 export type WidgetType = "kpi" | "bar-chart" | "line-chart" | "pie-chart" | "table";

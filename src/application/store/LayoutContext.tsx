@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useEffect, type Dispatch } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, type Dispatch } from 'react';
 import type { ReactNode } from 'react';
 import { getUserLayout } from '../useCases/getUserLayout';
 import { saveUserLayout } from '../useCases/saveUserLayout';
@@ -17,6 +17,7 @@ type LayoutState = {
 };
 
 type LayoutAction =
+  | { type: 'SET_USER_ID'; payload: string | null }
   | { type: 'SET_CURRENT_DASHBOARD'; payload: string }
   | { type: 'SET_DASHBOARD_LAYOUTS'; payload: { dashboardId: string; activeWidgets: string[]; layouts: Record<string, LayoutItem[]> } }
   | { type: 'SET_LAYOUT'; payload: { breakpoint: string; layout: LayoutItem[] } }
@@ -37,8 +38,36 @@ const initialState: LayoutState = {
   userId: null,
 };
 
+/**
+ * Valida que un layout tenga la estructura correcta
+ */
+function validateLayout(layout: any): boolean {
+  if (!layout || typeof layout !== 'object') return false;
+  if (!Array.isArray(layout.activeWidgets)) return false;
+  if (typeof layout.layouts !== 'object') return false;
+  
+  // Validar cada breakpoint
+  for (const [, items] of Object.entries(layout.layouts)) {
+    if (!Array.isArray(items)) return false;
+    for (const item of items) {
+      if (!item.i || typeof item.x !== 'number' || typeof item.y !== 'number' ||
+          typeof item.w !== 'number' || typeof item.h !== 'number') {
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
 function layoutReducer(state: LayoutState, action: LayoutAction): LayoutState {
   switch (action.type) {
+    case 'SET_USER_ID':
+      return {
+        ...state,
+        userId: action.payload,
+      };
+    
     case 'CLEAR_DASHBOARDS':
       return {
         ...state,
@@ -162,6 +191,9 @@ const LayoutContext = createContext<{
 
 export function LayoutProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(layoutReducer, initialState);
+  
+  // Ref para el timeout de debounce
+  const saveTimeoutRef = useRef<number | null>(null);
 
   // Limpiar dashboards cuando cambia el usuario
   useEffect(() => {
@@ -216,21 +248,40 @@ export function LayoutProvider({ children }: { children: ReactNode }) {
     }
   }, [state.currentDashboardId, state.userId, state.dashboards]);
 
-  // Guardar layout cuando cambia
+  // Guardar layout cuando cambia con debounce (1 segundo)
   useEffect(() => {
-    if (state.userId) {
-      const currentDashboard = state.dashboards[state.currentDashboardId];
-      
-      // Solo guardar si el dashboard existe
-      if (currentDashboard) {
-        saveUserLayout(
-          state.userId,
-          state.currentDashboardId,
-          currentDashboard.activeWidgets,
-          currentDashboard.layouts
-        );
-      }
+    // Limpiar timeout anterior
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
+    
+    // Configurar nuevo timeout
+    saveTimeoutRef.current = setTimeout(() => {
+      if (state.userId) {
+        const currentDashboard = state.dashboards[state.currentDashboardId];
+        
+        // Solo guardar si el dashboard existe y es válido
+        if (currentDashboard && validateLayout(currentDashboard)) {
+          try {
+            saveUserLayout(
+              state.userId,
+              state.currentDashboardId,
+              currentDashboard.activeWidgets,
+              currentDashboard.layouts
+            );
+          } catch (error) {
+            console.error('Error al guardar layout:', error);
+          }
+        }
+      }
+    }, 1000); // 1 segundo de debounce
+    
+    // Cleanup
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [state.userId, state.currentDashboardId, state.dashboards]);
 
   return (

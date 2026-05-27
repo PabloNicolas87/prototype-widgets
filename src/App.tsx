@@ -1,13 +1,24 @@
-import { AuthProvider, LayoutProvider, useAuth } from './application/store';
+import { AuthProvider, LayoutProvider, useAuth, useLayout } from './application/store';
 import { LoginPage } from './presentation/pages/LoginPage';
 import { DashboardPage } from './presentation/pages/DashboardPage';
 import { Sidebar } from './presentation/components/Sidebar';
 import { Toaster } from 'react-hot-toast';
+import { useEffect } from 'react';
 
 function AppContent() {
-  const { state } = useAuth();
+  const { state: authState } = useAuth();
+  const { dispatch: layoutDispatch } = useLayout();
 
-  if (!state.currentUser) {
+  // Actualizar userId en LayoutContext cuando cambia el usuario autenticado
+  useEffect(() => {
+    if (authState.currentUser) {
+      layoutDispatch({ type: 'SET_USER_ID', payload: authState.currentUser.id });
+    } else {
+      layoutDispatch({ type: 'SET_USER_ID', payload: null });
+    }
+  }, [authState.currentUser, layoutDispatch]);
+
+  if (!authState.currentUser) {
     return <LoginPage />;
   }
 
